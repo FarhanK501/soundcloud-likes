@@ -6,6 +6,10 @@ import logging
 import requests
 import sys
 import youtube_dl
+try:
+    from collections.abc import MutableMapping
+except ImportError:
+    from collections import MutableMapping
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(filename='log.log', format='%(levelname)s - %(message)s', level=logging.INFO)
@@ -18,12 +22,16 @@ REPEATABLE_PARAMS = '&app_version=1478268854&client_id=' + CLIENT_ID
 SEED_URL = 'https://api-v2.soundcloud.com/users/{user_id}/likes?offset=0&limit=100'
 
 def extract_user_id(user_page):
-    """ forgive my lack of regex knowledge... """
-    pre_id = 'https://api.soundcloud.com/users/'
-    beginning_id = user_page.index(pre_id) + len(pre_id)
-    end_id = beginning_id + user_page[beginning_id:].index('"')
-    user_id = user_page[beginning_id:end_id]
-    return user_id
+    pre_id = 'api.soundcloud.com/users/'
+    try:
+        beginning_id = user_page.index(pre_id) + len(pre_id)
+        end_id = user_page[beginning_id:].index('"')
+        user_id = user_page[beginning_id:beginning_id + end_id]
+        return user_id
+    except ValueError:
+        logger.error('Unable to extract user ID. Check if the structure of the SoundCloud website has changed.')
+        sys.exit(1)
+
 
 def main(username):
     logger.info("Getting user ID for {}...".format(username))
@@ -50,7 +58,7 @@ def main(username):
     url = SEED_URL.format(user_id=user_id)
     while True:
         payload = json.loads(requests.get(url + REPEATABLE_PARAMS).content.decode('utf-8'))
-        for like_json in payload['collection']:
+        for like_json in payload.get('collection', []):
             if 'track' in like_json:
                 try:
                     permalink_url = like_json['track']['permalink_url']
@@ -61,6 +69,7 @@ def main(username):
                         json.dumps(like_json)
                     ))
                     pass
+
         url = payload.get('next_href')
         if url is None:
             break
